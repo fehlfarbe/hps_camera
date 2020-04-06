@@ -10,6 +10,14 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   message_generation
+  dynamic_reconfigure
+  pcl_conversions
+  pcl_ros
+  cv_bridge
+)
+
+generate_dynamic_reconfigure_options(
+        cfg/HPS.cfg
 )
 
 ###################################
@@ -39,4 +47,23 @@ target_link_libraries(
   ros_hps_camera
   ${catkin_LIBRARIES}
   hps3d64179
+)
+
+### new node
+find_package(OpenCV 3 REQUIRED)
+
+add_executable(hps_node
+        ros/src/hps_node.cpp
+        ros/src/HPSCamera.cpp
+        ros/src/depth_image_converter.cpp
+        ros/src/point_cloud_converter.cpp
+        )
+
+add_dependencies(hps_node ${PROJECT_NAME}_gencfg)
+
+target_link_libraries(
+        hps_node
+        ${catkin_LIBRARIES}
+        hps3d64179
+        opencv_core
 )
