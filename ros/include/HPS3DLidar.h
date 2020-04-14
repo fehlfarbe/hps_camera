@@ -2,17 +2,19 @@
 // Created by kolbe on 02.04.20.
 //
 
-#ifndef HPS_CAMERA_HPSCAMERA_H
-#define HPS_CAMERA_HPSCAMERA_H
+#ifndef HPS_CAMERA_HPS3DLIDAR_H
+#define HPS_CAMERA_HPS3DLIDAR_H
 
 #include <cstring>
 #include <ros/ros.h>
+#include <std_msgs/Header.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/PointField.h>
+#include <sensor_msgs/Temperature.h>
 #include <api.h>
-#include <depth_image_converter.h>
-#include <point_cloud_converter.h>
+//#include <depth_image_converter.h>
+//#include <point_cloud_converter.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
@@ -20,19 +22,21 @@
 #include <hps_camera/HPSConfig.h>
 
 
-class HPSCamera {
+class HPS3DLidar {
 public:
-    HPSCamera(ros::NodeHandle &n, std::string devicePath);
-    ~HPSCamera();
+    HPS3DLidar(ros::NodeHandle &n, std::string devicePath);
+    ~HPS3DLidar();
 
     bool init();
     void release();
 
     static std::vector<std::string> getDevices(std::string dir, std::string dev_prefix);
+    static std::string statusTypeStr(RET_StatusTypeDef status);
 
 private:
     void* cbHandler(HPS3D_HandleTypeDef* handle, AsyncIObserver_t* event);
     static void* cbStaticHandler(HPS3D_HandleTypeDef* handle, AsyncIObserver_t* event);
+    static void cbDebug(char* msg);
 
     void cbReconfigure(hps_camera::HPSConfig conf, uint32_t level);
 
@@ -40,8 +44,6 @@ private:
 
     HPS3D_HandleTypeDef handle;
     AsyncIObserver_t eventObserver;
-
-    DepthImageConverter depthImageConv;
 
     ros::NodeHandle& node;
 
@@ -53,7 +55,8 @@ private:
     ros::Publisher pub_pointcloud;
     ros::Publisher pub_depth;
     ros::Publisher pub_depth_color;
+    ros::Publisher pub_temperature;
 };
 
 
-#endif //HPS_CAMERA_HPSCAMERA_H
+#endif //HPS_CAMERA_HPS3DLIDAR_H

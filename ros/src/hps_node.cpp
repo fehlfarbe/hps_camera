@@ -2,7 +2,7 @@
 // Created by kolbe on 02.04.20.
 //
 #include <ros/ros.h>
-#include <HPSCamera.h>
+#include <HPS3DLidar.h>
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "ros_hps_camera");
@@ -11,7 +11,7 @@ int main(int argc, char **argv){
     // read params
     std::string device = n.param<std::string>("device", "/dev/ttyACM0");
 
-    HPSCamera cam(n, device);
+    HPS3DLidar cam(n, device);
     if(!cam.init()){
         return EXIT_FAILURE;
     }

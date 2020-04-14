@@ -14,7 +14,7 @@
 *.pch
 
 # Compiled Dynamic libraries
-*.so
+#*.so
 *.dylib
 *.dll
 
@@ -50,7 +50,7 @@
 # Libraries
 
 # Shared objects (inc. Windows DLLs)
-*.so.*
+#*.so.*
 
 # Executables
 *.i*86

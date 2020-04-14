@@ -2,32 +2,38 @@
 // Created by kolbe on 02.04.20.
 //
 
-#include "HPSCamera.h"
+#include "HPS3DLidar.h"
 #include <opencv2/core.hpp>
 #include <cv_bridge/cv_bridge.h>
 
 
 // HACK, cannot set class member for callback so I use a static function that access this object
-HPSCamera* current_object = nullptr;
+HPS3DLidar* current_object = nullptr;
 
 
-HPSCamera::HPSCamera(ros::NodeHandle &n, std::string devicePath) : node(n) {
+HPS3DLidar::HPS3DLidar(ros::NodeHandle &n, std::string devicePath) : node(n) {
     pub_pointcloud = node.advertise<sensor_msgs::PointCloud2>("cloud", 1);
     pub_depth = node.advertise<sensor_msgs::Image>("depth", 1);
     pub_depth_color = node.advertise<sensor_msgs::Image>("depth_color", 1);
+    pub_temperature = node.advertise<sensor_msgs::Temperature>("temperature", 1);
 
     // set device path
-    handle.DeviceName = (uint8_t*)calloc(devicePath.size(), sizeof(uint8_t));
-    memcpy(handle.DeviceName, devicePath.c_str(), sizeof(uint8_t)*devicePath.size());
+    handle.DeviceName = const_cast<char *>(devicePath.c_str());
+//    memcpy(handle.DeviceName, devicePath.c_str(), sizeof(uint8_t)*devicePath.size());
 
     // dynamic reconfigure
-    f = boost::bind(&HPSCamera::cbReconfigure, this, _1, _2);
+    f = boost::bind(&HPS3DLidar::cbReconfigure, this, _1, _2);
     server.setCallback(f);
 
     current_object = this;
+
+    // print SDK version
+    Version_t v = HPS3D_GetSDKVersion();
+    ROS_INFO_STREAM("HPS3D SDK version: " << unsigned(v.year)
+    << "." << unsigned(v.month) << "." << unsigned(v.day) << " v" << unsigned(v.major) << "." << unsigned(v.minor) << "." << unsigned(v.rev));
 }
 
-HPSCamera::~HPSCamera() {
+HPS3DLidar::~HPS3DLidar() {
     release();
 
     // shutdown ROS
@@ -37,7 +43,7 @@ HPSCamera::~HPSCamera() {
     node.shutdown();
 }
 
-bool HPSCamera::init() {
+bool HPS3DLidar::init() {
     RET_StatusTypeDef ret = RET_OK;
 
     // connect
@@ -45,28 +51,33 @@ bool HPSCamera::init() {
     ret = HPS3D_Connect(&handle);
     if (ret != RET_OK)
     {
-        ROS_ERROR_STREAM("Device open failed! ret = " << ret);
+        ROS_ERROR_STREAM("Device open failed! " << HPS3DLidar::statusTypeStr(ret) << " (error code " << ret << ")");
         return false;
     }
 
     // set config
-    HPS3D_SetOpticalEnable(&handle, true);
-    HPS3D_SetPointCloudEn(true);
     ret = HPS3D_ConfigInit(&handle);
     if (ret != RET_OK)
     {
-        HPS3D_RemoveDevice(&handle);
-        ROS_ERROR_STREAM("Initialization failed: " << ret << ", device removed");
+//        HPS3D_RemoveDevice(&handle);
+        ROS_ERROR_STREAM("Initialization failed: " << HPS3DLidar::statusTypeStr(ret) << " (error code " << ret << ")");
         return false;
     }
+
+    // enable pointcloud
+    HPS3D_SetOpticalEnable(&handle, true);
+    HPS3D_SetPointCloudEn(true);
 
     // add callback
     eventObserver.AsyncEvent = ISubject_Event_DataRecvd;
     eventObserver.NotifyEnable = true;
 //    std::function<void*(HPS3D_HandleTypeDef *,AsyncIObserver_t *)> f;
-//    HPS3D_AddObserver(std::bind(&HPSCamera::callbackHandler, this, std::placeholders::_1, std::placeholders::_2), &handle, &eventObserver);
+//    HPS3D_AddObserver(std::bind(&HPS3DLidar::callbackHandler, this, std::placeholders::_1, std::placeholders::_2), &handle, &eventObserver);
 //    HPS3D_AddObserver((void * (*fun)(HPS3D_HandleTypeDef *,AsyncIObserver_t *))f, &handle, &eventObserver);
-    HPS3D_AddObserver(cbStaticHandler, &handle, &eventObserver);
+    HPS3D_AddObserver(HPS3DLidar::cbStaticHandler, &handle, &eventObserver);
+
+    // add debug callback
+    HPS3D_SetDebugFunc(HPS3DLidar::cbDebug);
 
     // start capturing
     handle.RunMode = RUN_CONTINUOUS;
@@ -76,39 +87,39 @@ bool HPSCamera::init() {
     return true;
 }
 
-void *HPSCamera::cbHandler(HPS3D_HandleTypeDef *handle, AsyncIObserver_t *event) {
+void *HPS3DLidar::cbHandler(HPS3D_HandleTypeDef *handle, AsyncIObserver_t *event) {
 
     ROS_INFO_STREAM("Callback from observer " << event->ObserverID);
 
-    if (event->AsyncEvent != ISubject_Event_DataRecvd) {
-        return nullptr;
-    }
-
-    // handle packet
-    switch (event->RetPacketType) {
-        case SIMPLE_ROI_PACKET:
-        case SIMPLE_DEPTH_PACKET:
-        case OBSTACLE_PACKET:
-        case NULL_PACKET:
-        case FULL_ROI_PACKET:
-            break;
-        case FULL_DEPTH_PACKET:
-            publish(event->MeasureData);
-            break;
-        default:
-            ROS_ERROR("system error!\n");
-    }
-
-    return nullptr;
+//    if (event->AsyncEvent != ISubject_Event_DataRecvd) {
+//        return nullptr;
+//    }
+//
+//    // handle packet
+//    switch (event->RetPacketType) {
+//        case SIMPLE_ROI_PACKET:
+//        case SIMPLE_DEPTH_PACKET:
+//        case OBSTACLE_PACKET:
+//        case NULL_PACKET:
+//        case FULL_ROI_PACKET:
+//            break;
+//        case FULL_DEPTH_PACKET:
+//            publish(event->MeasureData);
+//            break;
+//        default:
+//            ROS_ERROR("system error!\n");
+//    }
+//
+//    return nullptr;
 }
 
-std::vector<std::string> HPSCamera::getDevices(std::string dir, std::string dev_prefix) {
+std::vector<std::string> HPS3DLidar::getDevices(std::string dir, std::string dev_prefix) {
     std::vector<std::string> devices;
 
-    uint8_t fileName[DEV_NUM][DEV_NAME_SIZE];
+    char fileName[DEV_NUM][DEV_NAME_SIZE];
     uint32_t dev_cnt = 0;
 
-    dev_cnt = HPS3D_GetDeviceList((uint8_t *)"/dev/", (uint8_t *)"ttyACM", fileName);
+    dev_cnt = HPS3D_GetDeviceList("/dev/", "ttyACM", fileName);
 
     for(size_t i=0; i<dev_cnt; i++){
         ROS_INFO_STREAM("Found device: " << fileName[i]);
@@ -118,7 +129,7 @@ std::vector<std::string> HPSCamera::getDevices(std::string dir, std::string dev_
     return devices;
 }
 
-void *HPSCamera::cbStaticHandler(HPS3D_HandleTypeDef *handle, AsyncIObserver_t *event) {
+void *HPS3DLidar::cbStaticHandler(HPS3D_HandleTypeDef *handle, AsyncIObserver_t *event) {
 //    ROS_INFO_STREAM("Callback from observer " << event->ObserverID);
 
     if (event->AsyncEvent != ISubject_Event_DataRecvd) {
@@ -141,24 +152,31 @@ void *HPSCamera::cbStaticHandler(HPS3D_HandleTypeDef *handle, AsyncIObserver_t *
         case FULL_DEPTH_PACKET:
             current_object->publish(event->MeasureData);
             break;
+        case KEEP_ALIVE_PACKET:
+            ROS_DEBUG("Got keepalive packet");
+            break;
         default:
             ROS_ERROR("system error!\n");
     }
     return nullptr;
 }
 
-void HPSCamera::publish(MeasureDataTypeDef& data) {
+void HPS3DLidar::publish(MeasureDataTypeDef& data) {
+    std_msgs::Header header;
+    header.stamp = ros::Time::now();
+    header.frame_id = "hps_camera";
+    header.seq = data.full_depth_data->frame_cnt;
 
     // publish data if there are subscribers
-    if(pub_pointcloud.getNumSubscribers()){
+    if(pub_pointcloud.getNumSubscribers() and data.point_cloud_data){
         pcl::PointCloud<pcl::PointXYZ> cloud;
         sensor_msgs::PointCloud2 outputPointCloud;
         outputPointCloud.header.stamp = ros::Time::now();
         cloud.width = data.point_cloud_data->width;
         cloud.height = data.point_cloud_data->height;
-        cloud.points.resize(cloud.width * cloud.height);
+        cloud.points.resize(cloud.width*cloud.height);
         for (size_t i = 0; i < cloud.points.size(); ++i) {
-            const auto& pointData = data.point_cloud_data[0].point_data[i];
+            const auto& pointData = data.point_cloud_data->point_data[i];
             if (pointData.z < LOW_AMPLITUDE) {
                 cloud.points[i].x = pointData.x / 1000.0;
                 cloud.points[i].y = pointData.y / 1000.0;
@@ -170,31 +188,34 @@ void HPSCamera::publish(MeasureDataTypeDef& data) {
             }
         }
         pcl::toROSMsg(cloud, outputPointCloud);
-        outputPointCloud.header.frame_id = "hps_camera";
+        outputPointCloud.header = header;
         pub_pointcloud.publish(outputPointCloud);
     }
     if(pub_depth.getNumSubscribers() or pub_depth_color.getNumSubscribers()){
         // set Mat pointer to distance data
-        cv::Mat values(data.point_cloud_data->height, data.point_cloud_data->width, CV_16U, data.full_depth_data->distance);
+        cv::Mat values(RES_HEIGHT, RES_WIDTH, CV_16U, data.full_depth_data->distance);
+        cv::Mat mask = cv::Mat::ones(RES_HEIGHT, RES_WIDTH, CV_8U) * std::numeric_limits<uint8_t>::max();
+
+        // get invalid data and set mask
+        mask.setTo(0, values == LOW_AMPLITUDE);
+        mask.setTo(0, values == INVALID_DATA);
+        mask.setTo(0, values == ADC_OVERFLOW);
+        mask.setTo(0, values == SATURATION);
+
+        // apply mask
+        cv::Mat valuesMasked;
+        values.copyTo(valuesMasked, mask);
 
         // normalize / set min/max range and clip
-        cv::Mat norm(data.point_cloud_data->height, data.point_cloud_data->width, CV_16U);
-        norm = cv::min(values, reconf.depth_image_max);
+        cv::Mat norm(RES_HEIGHT, RES_WIDTH, CV_16U);
+        norm = cv::min(valuesMasked, reconf.depth_image_max);
         norm = cv::max(norm, reconf.depth_image_min);
         norm -= reconf.depth_image_min;
         norm *= (double)std::numeric_limits<uint16_t>::max() / (reconf.depth_image_max-reconf.depth_image_min);
 
-        // min max
-        double min, max;
-        cv::minMaxLoc(values, &min, &max);
-        ROS_INFO_STREAM("Min: " << min << " max: " << max);
-
-        cv::minMaxLoc(norm, &min, &max);
-        ROS_INFO_STREAM("Min: " << min << " max: " << max);
-
         // setup message and cv bridge
         cv_bridge::CvImage out_msg;
-        out_msg.header.stamp = ros::Time::now();
+        out_msg.header = header;
 
         // publish depth
         if(pub_depth.getNumSubscribers()){
@@ -203,7 +224,8 @@ void HPSCamera::publish(MeasureDataTypeDef& data) {
             pub_depth.publish(out_msg);
         }
 
-        // color depth as HSV image (looks good but has no additional information)
+        // color depth as HSV image
+        // set mask to value channel so masked pixels are marked
         if(pub_depth_color.getNumSubscribers()){
             cv::Mat hsv, rgb;
             cv::Mat sat_val = cv::Mat::ones(norm.size(), CV_8U)*255;
@@ -212,7 +234,7 @@ void HPSCamera::publish(MeasureDataTypeDef& data) {
             std::vector<cv::Mat> channels;
             channels.emplace_back(hue);
             channels.emplace_back(sat_val);
-            channels.emplace_back(sat_val);
+            channels.emplace_back(mask);
 
             cv::merge(channels, hsv);
             cv::cvtColor(hsv, rgb, cv::COLOR_HSV2RGB);
@@ -222,9 +244,17 @@ void HPSCamera::publish(MeasureDataTypeDef& data) {
             pub_depth_color.publish(out_msg);
         }
     }
+
+    // device temperature
+    if(pub_temperature.getNumSubscribers()){
+        sensor_msgs::Temperature t;
+        t.header = header;
+        t.temperature = data.full_depth_data->temperature / 10.;
+        pub_temperature.publish(t);
+    }
 }
 
-void HPSCamera::release() {
+void HPS3DLidar::release() {
     // handle shutdown
     if(handle.ConnectStatus){
         ROS_INFO_STREAM("Disconnect device " << handle.DeviceName);
@@ -232,18 +262,24 @@ void HPSCamera::release() {
     }
 }
 
-void HPSCamera::cbReconfigure(hps_camera::HPSConfig conf, uint32_t level) {
+void HPS3DLidar::cbReconfigure(hps_camera::HPSConfig conf, uint32_t level) {
     ROS_INFO("Got reconfigure");
     // save latest config to member
     reconf = conf;
 
+    if(!handle.ConnectStatus){
+        ROS_INFO("Cannot set device config. Not connected.");
+        return;
+    }
+
     // pause device and update config
     ROS_INFO("Pause device for reconfigure...");
     RunModeTypeDef tmpRunMode = handle.RunMode;
-    if(handle.ConnectStatus) {
-        handle.RunMode = RUN_IDLE;
-        HPS3D_SetRunMode(&handle);
-    }
+    handle.RunMode = RUN_IDLE;
+    HPS3D_SetRunMode(&handle);
+
+    // debug
+    HPS3D_SetDebugEnable(reconf.debugEnable);
 
     // HDR
     HDRConf hdrConf;
@@ -294,4 +330,37 @@ void HPSCamera::cbReconfigure(hps_camera::HPSConfig conf, uint32_t level) {
     ROS_INFO("Configure done, resume...");
     handle.RunMode = tmpRunMode;
     HPS3D_SetRunMode(&handle);
+}
+
+std::string HPS3DLidar::statusTypeStr(RET_StatusTypeDef status) {
+    switch (status) {
+        case RET_OK:
+            return std::string("OK");
+        case RET_ERROR:
+            return std::string("ERROR");
+        case RET_BUSY:
+            return std::string("DEVICE BUSY");
+        case RET_CONNECT_FAILED:
+            return std::string("CONNECTION FAILED");
+        case RET_CREAT_PTHREAD_ERR:
+            return std::string("THREAD CREATION FAILED");
+        case RET_WRITE_ERR:
+            return std::string("WRITE FAILURE");
+        case RET_READ_ERR:
+            return std::string("READ FAILURE");
+        case RET_PACKET_HEAD_ERR:
+            return std::string("HEADER ERROR");
+        case RET_PACKET_ERR:
+            return std::string("PACKET ERROR");
+        case RET_BUFF_EMPTY:
+            return std::string("BUFFER IS EMPTY");
+        case RET_VER_MISMATCH:
+            return std::string("VERSION DOES NOT MATCH");
+    }
+
+    return std::string("UNKNOWN ERROR CODE");
+}
+
+void HPS3DLidar::cbDebug(char *msg) {
+    ROS_DEBUG_STREAM("HPS Debug: " << msg);
 }

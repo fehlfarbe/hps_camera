@@ -37,24 +37,35 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(ros_hps_camera
-  ros/src/ros_hps_camera.cpp
-  ros/src/depth_image_converter.cpp
-  ros/src/point_cloud_converter.cpp
-)
-
-target_link_libraries(
-  ros_hps_camera
-  ${catkin_LIBRARIES}
-  hps3d64179
-)
+#add_executable(ros_hps_camera
+#  ros/src/ros_hps_camera.cpp
+#  ros/src/depth_image_converter.cpp
+#  ros/src/point_cloud_converter.cpp
+#)
+#
+#target_link_libraries(
+#  ros_hps_camera
+#  ${catkin_LIBRARIES}
+#  hps3d64179
+#)
 
 ### new node
 find_package(OpenCV 3 REQUIRED)
 
+message("CPU architecture: " ${CMAKE_HOST_SYSTEM_PROCESSOR})
+if( ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "x86_64" )
+    set( HPSLIB "hps3d64" )
+elseif(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "arm")
+    set( HPSLIB "hps3d_arm" )
+else()
+    set( HPSLIB "hps3d32" )
+endif()
+message("Using libhps: " ${HPSLIB})
+
+
 add_executable(hps_node
         ros/src/hps_node.cpp
-        ros/src/HPSCamera.cpp
+        ros/src/HPS3DLidar.cpp
         ros/src/depth_image_converter.cpp
         ros/src/point_cloud_converter.cpp
         )
@@ -64,6 +75,6 @@ add_dependencies(hps_node ${PROJECT_NAME}_gencfg)
 target_link_libraries(
         hps_node
         ${catkin_LIBRARIES}
-        hps3d64179
+        ${HPSLIB}
         opencv_core
 )
