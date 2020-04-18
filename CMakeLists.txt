@@ -6,15 +6,15 @@ add_compile_options(-std=c++11)
 link_directories(${CMAKE_SOURCE_DIR}/common/lib)
 
 find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
-  std_msgs
-  message_generation
-  dynamic_reconfigure
-  pcl_conversions
-  pcl_ros
-  cv_bridge
-)
+        roscpp
+        rospy
+        std_msgs
+        message_generation
+        dynamic_reconfigure
+        pcl_conversions
+        pcl_ros
+        cv_bridge
+        )
 
 generate_dynamic_reconfigure_options(
         cfg/HPS.cfg
@@ -25,7 +25,7 @@ generate_dynamic_reconfigure_options(
 ###################################
 
 catkin_package(
-   CATKIN_DEPENDS message_runtime
+        CATKIN_DEPENDS message_runtime
 )
 
 ###########
@@ -33,8 +33,8 @@ catkin_package(
 ###########
 
 include_directories(
-  ros/include
-  ${catkin_INCLUDE_DIRS}
+        ros/include
+        ${catkin_INCLUDE_DIRS}
 )
 
 #add_executable(ros_hps_camera
@@ -62,6 +62,9 @@ else()
 endif()
 message("Using libhps: " ${HPSLIB})
 
+#find_library(HPS_LIBRARY hps3d HINTS ${CMAKE_SOURCE_DIR}/common/lib)
+link_directories(common/lib/)
+#message("Link directories: " ${LINK_DIRECTORIES})
 
 add_executable(hps_node
         ros/src/hps_node.cpp
@@ -78,3 +81,13 @@ target_link_libraries(
         ${HPSLIB}
         opencv_core
 )
+
+install(TARGETS hps_node
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+        )
+
+install(DIRECTORY common/lib/ DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        FILES_MATCHING PATTERN "*.so"
+        )

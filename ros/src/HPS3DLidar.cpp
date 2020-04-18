@@ -119,7 +119,7 @@ std::vector<std::string> HPS3DLidar::getDevices(std::string dir, std::string dev
     char fileName[DEV_NUM][DEV_NAME_SIZE];
     uint32_t dev_cnt = 0;
 
-    dev_cnt = HPS3D_GetDeviceList("/dev/", "ttyACM", fileName);
+    dev_cnt = HPS3D_GetDeviceList((char*)"/dev/", (char*)"ttyACM", fileName);
 
     for(size_t i=0; i<dev_cnt; i++){
         ROS_INFO_STREAM("Found device: " << fileName[i]);
